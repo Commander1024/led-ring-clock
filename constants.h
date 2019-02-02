@@ -1,6 +1,7 @@
 //
 // WS2812 LED Analog Clock Firmware
 // Copyright (c) 2016-2018 jackw01
+// NTP Changes: 2019 Commander1024
 // This code is distrubuted under the MIT License, see LICENSE for details
 //
 
@@ -12,11 +13,19 @@
 
 // IO Pin Assignments
 const uint8_t pinLeds = 3;
-const uint8_t pinButton = 4;
+const uint8_t pinButton = 5;
 const uint8_t pinBrightness = 0;
 
+// Define MAC Address
+byte mac[] = {
+    0xA8, 0x61, 0x0A, 0x10, 0x24, 0x01
+};
+
+// NTP Server to use
+char* ntp_server = "warpfire.warpzone";
+
 // Number of LEDs in ring
-const int ledRingSize = 24;
+const int ledRingSize = 61;
 
 // Default colors - tweaked to look right on WS2812Bs
 const CRGB red = CRGB(255, 0, 0);
@@ -58,8 +67,8 @@ const int buttonClickRepeatDelayMs = 1500;
 const int buttonLongPressDelayMs = 300;
 
 // Serial
-const long serialPortBaudRate = 115200;
-const int debugMessageIntervalMs = 2000;
+const long serialPortBaudRate = 9600;
+const int debugMessageIntervalMs = 5000;
 
 // Clock modes
 typedef enum {

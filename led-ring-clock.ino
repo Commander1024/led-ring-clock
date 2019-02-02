@@ -1,20 +1,25 @@
 //
 // WS2812 LED Analog Clock Firmware
 // Copyright (c) 2016-2018 jackw01
+// NTP Changes: 2019 Commander1024
 // This code is distrubuted under the MIT License, see LICENSE for details
 //
 
 #include <math.h>
 #include <FastLED.h>
-#include <Wire.h>
 #include <EEPROM.h>
-#include <RTClib.h>
+#include <TimeLib.h>
+#include <NtpClientLib.h>
+#include <SPI.h>
+#include <EthernetUdp.h>
+#include <Ethernet.h>
+#include <Dns.h>
+#include <Dhcp.h>
 
 #include "constants.h"
 
-// LED ring and RTC
+// LED ring size
 CRGB leds[ledRingSize];
-RTC_DS1307 rtc;
 
 // Globals to keep track of state
 int clockMode, colorScheme;
@@ -26,23 +31,41 @@ uint8_t previousBrightness[16];
 int lastSecondsValue = 0;
 uint32_t lastMillisecondsSetTime = 0;
 int milliseconds;
-DateTime now;
 
 void setup() {
 	// Begin serial port
 	Serial.begin(serialPortBaudRate);
+
+    // Initialize Network and NTP
+    if (Ethernet.begin (mac) == 0) {
+        Serial.println ("Failed to configure Ethernet using DHCP");
+        // no point in carrying on, so do nothing forevermore:
+        for (;;)
+            ;
+    }
+    NTP.onNTPSyncEvent ([](NTPSyncEvent_t error) {
+        if (error) {
+            Serial.print ("Time Sync error: ");
+            if (error == noResponse)
+                Serial.println ("NTP server not reachable");
+            else if (error == invalidAddress)
+                Serial.println ("Invalid NTP server address");
+        } else {
+            Serial.print ("Got NTP time: ");
+            Serial.println (NTP.getTimeDateString (NTP.getLastNTPSync ()));
+        }
+    });
+    NTP.setInterval (60, 900);
+    NTP.setNTPTimeout (1000);
+    NTP.begin (ntp_server, 1, true);
 
 	// Init FastLED
 	FastLED.addLeds<NEOPIXEL, pinLeds>(leds, ledRingSize);
 	FastLED.setTemperature(Halogen);
     FastLED.show();
 
-	// Connect to the RTC
-    Wire.begin();
-    rtc.begin();
-
 	// Set button pin
-    pinMode(pinButton, INPUT);
+    pinMode(pinButton, INPUT_PULLUP);
 
 	// Read saved config from EEPROM
     colorScheme = EEPROM.read(eepromAddrColorScheme);
@@ -52,9 +75,12 @@ void setup() {
     if (digitalRead(pinButton) == LOW) {
         for (int i = 0; i < ledRingSize; i++) leds[i] = white;
         FastLED.show();
-        delay(60000);
+        delay(10000);
     }
 }
+
+static int i = 0;
+static int last = 0;
 
 void loop() {
 	uint32_t currentTime = millis();
@@ -94,8 +120,7 @@ void loop() {
 		FastLED.setBrightness(currentBrightness);
 
 		// Get time and calculate milliseconds value that is synced with the RTC's second count
-		now = rtc.now();
-		int currentSeconds = now.second();
+		int currentSeconds = second(now());
 		if (currentSeconds != lastSecondsValue) {
 			lastSecondsValue = currentSeconds;
 			milliseconds = 0;
@@ -107,6 +132,9 @@ void loop() {
 		// Show clock
 		clearLeds();
 	    showClock();
+
+		// Check/Renew DHCP
+		Ethernet.maintain ();
 	}
 }
 
@@ -131,18 +159,17 @@ void showClock() {
 // Print debugging info over serial
 void printDebugMessage() {
     Serial.print("Current date/time: ");
-    DateTime now = rtc.now();
-    Serial.print(now.year(), DEC);
+    Serial.print(year(now()), DEC);
     Serial.print("/");
-    Serial.print(now.month(), DEC);
+    Serial.print(month(now()), DEC);
     Serial.print("/");
-    Serial.print(now.day(), DEC);
+    Serial.print(day(now()), DEC);
     Serial.print(" ");
-    Serial.print(now.hour(), DEC);
+    Serial.print(hour(now()), DEC);
     Serial.print(":");
-    Serial.print(now.minute(), DEC);
+    Serial.print(minute(now()), DEC);
     Serial.print(":");
-    Serial.print(now.second(), DEC);
+    Serial.print(second(now()), DEC);
     Serial.println();
     Serial.print("Display mode: ");
     Serial.println(clockMode);
@@ -160,7 +187,7 @@ void drawRingClock() {
     float s = secondPosition();
 
     if (m > h) {
-        for (int i = 0; i < m; i++) setLed(i, minuteColor(), BlendModeOver, 1.0);
+        for (int i = 0; i < m; i++) setLed(i, minuteColor(), BlendModeOver, 1.0); 
         for (int i = 0; i < h; i++) setLed(i, hourColor(), BlendModeOver, 1.0);
     } else {
         for (int i = 0; i < h; i++) setLed(i, hourColor(), BlendModeOver, 1.0);
@@ -223,35 +250,38 @@ void drawDotClockGlow() {
 
 // Get floating point hour representation
 float floatHour() {
-	return (float)now.hour() + mapFloat(now.minute() + mapFloat(now.second(), 0.0, 59.0, 0.0, 1.0), 0.0, 59.0, 0.0, 1.0);
+	return (float)hour(now()) + mapFloat(minute(now()) + mapFloat(second(now()), 0.0, 59.0, 0.0, 1.0), 0.0, 59.0, 0.0, 1.0);
 }
 
 // Get positions mapped to ring size
 float hourPosition() {
 	if (twelveHour) {
-		int hour;
-		if (now.hour() > 12) hour = (now.hour() - 12) * (ledRingSize / 12);
-	    else hour = now.hour() * (ledRingSize / 12);
-		return hour + mapFloat(now.minute(), 0.0, 59.0, 0.0, (ledRingSize / 12.0) - 1.0);
+		int hourt;
+
+		if (hour(now()) > 12) hourt = (hour(now()) - 12) * (ledRingSize / 12);
+	    else hourt = hour(now()) * (ledRingSize / 12);
+		return hourt + mapFloat(minute(now()), 0.0, 59.0, 0.0, (ledRingSize / 12.0) - 1.0);
 	} else {
-		int hour = now.hour() * (ledRingSize / 24);
-		return hour + mapFloat(now.minute(), 0, 59, 0, (ledRingSize / 24.0) - 1.0);
+		int hourt = hour(now()) * (ledRingSize / 24);
+		return hourt + mapFloat(minute(now()), 0, 59, 0, (ledRingSize / 24.0) - 1.0);
 	}
 }
 
 float minutePosition() {
-	return mapFloat((float)now.minute() + ((1.0 / 60.0) * (float)now.second()), 0.0, 59.0, 0.0, (float)ledRingSize);
+	return mapFloat(
+		(float)minute(now()) + ((1.0 / 60.0) * (float)second(now())), 0.0, 59.0, 0.0, (float)ledRingSize
+		);
 }
 
 float secondPosition() {
-	return mapFloat(now.second() + (0.001 * milliseconds), 0.0, 60.0, 0.0, (float)ledRingSize);
+	return mapFloat(second(now()) + (0.001 * milliseconds), 0.0, 60.0, 0.0, (float)ledRingSize);
 }
 
 // Get colors
 CRGB hourColor() {
 	if (colorScheme < colorSchemeCount) return colorSchemes[colorScheme][0];
 	else if (colorScheme == colorSchemeCount + 0) {
-		return CHSV(map(now.hour(), 0, 24, 0, 255), 255, 255);
+		return CHSV(map(hour(now()), 0, 24, 0, 255), 255, 255);
 	} else if (colorScheme == colorSchemeCount + 1) {
 	    return CHSV((uint8_t)mapFloat(fmod(20.0 - floatHour(), 24.0), 0.0, 24.0, 0.0, 255.0), 255, 255);
 	}
@@ -260,7 +290,7 @@ CRGB hourColor() {
 CRGB minuteColor() {
 	if (colorScheme < colorSchemeCount) return colorSchemes[colorScheme][1];
 	else if (colorScheme == colorSchemeCount + 0) {
-		return CHSV(map(now.minute(), 0, 59, 0, 255), 255, 255);
+		return CHSV(map(minute(now()), 0, 59, 0, 255), 255, 255);
 	} else if (colorScheme == colorSchemeCount + 1) {
 		return CHSV((uint8_t)mapFloat(fmod(20.0 - floatHour(), 24.0), 0.0, 24.0, 0.0, 255.0), 255, 255);
 	}
@@ -269,7 +299,7 @@ CRGB minuteColor() {
 CRGB secondColor() {
 	if (colorScheme < colorSchemeCount) return colorSchemes[colorScheme][2];
 	else if (colorScheme == colorSchemeCount + 0) {
-		return CHSV(map(now.second(), 0, 59, 0, 255), 255, 255);
+		return CHSV(map(second(now()), 0, 59, 0, 255), 255, 255);
 	} else if (colorScheme == colorSchemeCount + 1) {
 		return CHSV((uint8_t)mapFloat(fmod(20.0 - floatHour(), 24.0), 0.0, 24.0, 0.0, 255.0), 255, 255);
 	}
