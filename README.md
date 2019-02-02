@@ -1,7 +1,7 @@
 # led-ring-clock
 An Arduino-based analog clock using an WS2812B addressable RGB LED ring as a display.
 
-This sketch requires the FastLED library, the Wire library (built-in), the EEPROM library (built-in), and the Adafruit RTClib.
+This sketch requires the FastLED library, the Wire library (built-in), the EEPROM library (built-in), and the NtpClientLib.
 
 https://github.com/FastLED/FastLED
 https://github.com/gmag11/NtpClient/tree/develop
