@@ -25,7 +25,7 @@ byte mac[] = {
 char* ntp_server = "warpfire.warpzone";
 
 // Number of LEDs in ring
-const int ledRingSize = 61;
+const int ledRingSize = 60;
 
 // Default colors - tweaked to look right on WS2812Bs
 const CRGB red = CRGB(255, 0, 0);

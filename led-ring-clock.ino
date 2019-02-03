@@ -260,21 +260,23 @@ float hourPosition() {
 
 		if (hour(now()) > 12) hourt = (hour(now()) - 12) * (ledRingSize / 12);
 	    else hourt = hour(now()) * (ledRingSize / 12);
-		return hourt + mapFloat(minute(now()), 0.0, 59.0, 0.0, (ledRingSize / 12.0) - 1.0);
+		return hourt + mapFloat(minute(now()) + 0.001, 0.0, 59.0, 0.0, (ledRingSize / 12.0) - 1.0);
 	} else {
 		int hourt = hour(now()) * (ledRingSize / 24);
-		return hourt + mapFloat(minute(now()), 0, 59, 0, (ledRingSize / 24.0) - 1.0);
+		return hourt + mapFloat(minute(now()) + 0.001, 0, 59, 0, (ledRingSize / 24.0) - 1.0);
 	}
 }
 
 float minutePosition() {
 	return mapFloat(
-		(float)minute(now()) + ((1.0 / 60.0) * (float)second(now())), 0.0, 59.0, 0.0, (float)ledRingSize
+		(float)minute(now()) + ((0.001 + 1.0 / 60.0) * (float)second(now())), 0.0, 59.0, 0.0, (float)ledRingSize
 		);
 }
 
 float secondPosition() {
-	return mapFloat(second(now()) + (0.001 * milliseconds), 0.0, 60.0, 0.0, (float)ledRingSize);
+	return mapFloat(
+		second(now()) + (0.001 * milliseconds), 0.0, 60.0, 0.0, (float)ledRingSize
+		);
 }
 
 // Get colors
